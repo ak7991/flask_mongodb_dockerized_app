@@ -16,7 +16,7 @@ def get_db(db_name=DATABASE_NAME):
                                     username='root',
                                     password='pass',
                                     authSource='admin')
-    else:    
+    else:
         client = pymongo.MongoClient(host=host)
     db = client[db_name]
     return db
@@ -82,6 +82,43 @@ def get_avg_products():
     finally:
         if type(db) == pymongo.MongoClient:
             db.close()
+
+
+@app.route('/create_materialized_view')
+def create_materialized_view():
+    db = get_db()
+    pipeline = [
+        # Unwind the products array
+        {"$unwind": "$products"},
+        
+        # Group by product id and name to calculate average quantity
+        {"$group": {
+            "_id": {"id": "$products.id"},
+            "avg_quantity": {"$avg": "$products.quantity"}
+        }},
+        
+        # Project the desired fields in the output
+        {"$project": {
+            "_id": 0,
+            "id": "$_id.id",
+            "name": "$products.name",
+            "measurement": "$products.measurement",
+            "avg_quantity": "avg_quantity"
+        }},
+        # Materialized views merging options
+        {"$merge": {
+            "into": "orders_tb",
+            "on": "_id",
+            "whenMatched": "replace",
+            "whenNotMatched": "insert"
+        }}
+    ]
+    
+    db.orders_tb.aggregate(pipeline, allowDiskUse=True, collation={"locale": "en_US", "strength": 2}).\
+        allowDiskUse(True).\
+        out("my_materialized_view")
+        
+    return jsonify({"message": "Materialized view created/updated successfully."})
 
 @app.route('/avg_quantity')
 def get_avg_quantity():
