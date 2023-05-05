@@ -1,19 +1,16 @@
 from collections import defaultdict
+import os
 
 from flask import Flask, jsonify, request
 import pymongo
-from pymongo import MongoClient
 
 DATABASE_NAME = "orders_db"
 
 app = Flask(__name__)
 
 def get_db(db_name=DATABASE_NAME):
-    client = MongoClient(host='localhost',
-                         port=27017, 
-                         username='root', 
-                         password='pass',
-                         authSource="admin")
+    host = os.environ.get("MONGODB_URI", "localhost")
+    client = pymongo.MongoClient(host=host)
     db = client[db_name]
     return db
 
@@ -34,12 +31,13 @@ def get_all_orders():
         for i in data:
             i.pop("_id")
             res.append(i)
-        return jsonify({"all_orders": res})
     except:
         pass
     finally:
-        if type(db) == MongoClient:
+        print("closing connection")
+        if type(db) == pymongo.MongoClient:
             db.close()
+        return jsonify({"all_orders": res})
 
 # Fetch order(s) by order_id
 @app.route('/order_id')
@@ -58,7 +56,7 @@ def get_orders():
     except:
         pass
     finally:
-        if type(db)==MongoClient:
+        if type(db) == pymongo.MongoClient:
             db.close()
 
 @app.route('/avg_products')
@@ -76,7 +74,7 @@ def get_avg_products():
     except:
         pass
     finally:
-        if type(db) == MongoClient:
+        if type(db) == pymongo.MongoClient:
             db.close()
     
 
@@ -99,7 +97,7 @@ def get_avg_quantity(product_id):
     except:
         pass
     finally:
-        if type(db) == MongoClient:
+        if type(db) == pymongo.MongoClient:
             db.close()
 
 if __name__=='__main__':
