@@ -10,7 +10,14 @@ app = Flask(__name__)
 
 def get_db(db_name=DATABASE_NAME):
     host = os.environ.get("MONGODB_URI", "localhost")
-    client = pymongo.MongoClient(host=host)
+    if host == "localhost":
+        client = pymongo.MongoClient(host='localhost',
+                                    port=27017,
+                                    username='root',
+                                    password='pass',
+                                    authSource='admin')
+    else:    
+        client = pymongo.MongoClient(host=host)
     db = client[db_name]
     return db
 
@@ -22,7 +29,6 @@ def ping_server():
 # DB connection check endpoint
 @app.route('/orders')
 def get_all_orders():
-    db = ""
     try:
         db = get_db()
         cursor = db.orders_tb.find()
@@ -31,10 +37,10 @@ def get_all_orders():
         for i in data:
             i.pop("_id")
             res.append(i)
-    except:
-        pass
+    except Exception as e:
+        print("An error occured: ", e)
+        db = None
     finally:
-        print("closing connection")
         if type(db) == pymongo.MongoClient:
             db.close()
         return jsonify({"all_orders": res})
@@ -42,7 +48,6 @@ def get_all_orders():
 # Fetch order(s) by order_id
 @app.route('/order_id')
 def get_orders():
-    db=""
     try:
         db = get_db()
         order_id = int(request.args.get('order_id'))
@@ -54,7 +59,7 @@ def get_orders():
         
         return jsonify({"result": result})
     except:
-        pass
+        db = None
     finally:
         if type(db) == pymongo.MongoClient:
             db.close()
@@ -68,34 +73,46 @@ def get_avg_products():
 
         for element in cursor:
             count += 1
-            num += len(element.products)
+            num += len(element["products"])
         print("Debugging avg endpoint: ", num, count)
         return jsonify({"average_products": num / count})
-    except:
-        pass
+    except Exception as e:
+        print("An error occured: ", e)
+        db = None
     finally:
         if type(db) == pymongo.MongoClient:
             db.close()
-    
 
 @app.route('/avg_quantity')
-def get_avg_quantity(product_id):
+def get_avg_quantity():
     try:
         db = get_db()
-        cursor = db.orders_tb.find()
-        num = count = 0
-        nums = defaultdict(lambda: [0,0,0])
+        pipeline = [
+            # Unwind the products array
+            {"$unwind": "$products"},
+            
+            # Group by product id and name to calculate average quantity
+            {"$group": {
+                "_id": {"id": "$products.id", "name": "$products.name", "measurement": "$products.measurement"},
+                "avg_quantity": {"$avg": "$products.quantity"}
+            }},
+            
+            # Project the desired fields in the output
+            {"$project": {
+                "_id": 0,
+                "id": "$_id.id",
+                "name": "$_id.name",
+                "measurement": "$_id.measurement",
+                "avg_quantity": 1
+            }}
+        ]
 
-        for element in cursor:
-            for product in element.products:
-                nums[product.id][0] += product.quantity
-                nums[product.id][1] += 1
-                nums[product.id][2] = nums[product.id][0] / nums[product.id][1]
-        print("Debugging avg qty endpoint: ", nums)
+        # Execute the pipeline and store the results in a list
+        results = list(db.orders_tb.aggregate(pipeline))
 
-        return jsonify({"avg_qty_per_product": nums})
+        return jsonify({"avg_qty_per_product": results})
     except:
-        pass
+        db = None
     finally:
         if type(db) == pymongo.MongoClient:
             db.close()
